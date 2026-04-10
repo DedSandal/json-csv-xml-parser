@@ -413,7 +413,7 @@ export const DemoSection: React.FC = () => {
                     setInputData(e.target.value);
                     setParsedResult(null);
                   }}
-                  className="w-full h-[350px] p-4 bg-surface-1 border border-border/50 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
+                  className="w-full h-[350px] p-4 bg-transparent border border-border/50 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
                   placeholder="Вставте ваші дані сюди..."
                   spellCheck={false}
                 />
