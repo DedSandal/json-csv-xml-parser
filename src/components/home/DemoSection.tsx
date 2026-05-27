@@ -53,7 +53,7 @@ const defaultData = {
 };
 
 type InputFormat = 'json' | 'csv' | 'xml';
-type OutputFormat = 'json' | 'csv' | 'table';
+type OutputFormat = 'json' | 'csv' | 'xml' | 'table';
 
 interface ParsedData {
   records: Record<string, unknown>[];
@@ -80,6 +80,7 @@ export const DemoSection: React.FC = () => {
   const outputFormats = [
     { id: 'json', label: 'JSON', icon: FileJson },
     { id: 'csv', label: 'CSV', icon: FileText },
+    { id: 'xml', label: 'XML', icon: FileCode },
     { id: 'table', label: 'Таблиця', icon: Table },
   ] as const;
 
@@ -229,12 +230,39 @@ export const DemoSection: React.FC = () => {
     switch (outputFormat) {
       case 'json':
         return JSON.stringify(parsedResult.records, null, 2);
-      case 'csv':
+      case 'csv': {
         const headers = Object.keys(parsedResult.records[0]);
         const rows = parsedResult.records.map(record => 
           headers.map(h => String(record[h])).join(',')
         );
         return [headers.join(','), ...rows].join('\n');
+      }
+      case 'xml': {
+        const rows = parsedResult.records.map(record => {
+          let xmlRow = '  <record>\n';
+          for (const [key, value] of Object.entries(record)) {
+            xmlRow += `    <${key}>${value}</${key}>\n`;
+          }
+          xmlRow += '  </record>';
+          return xmlRow;
+        });
+        return `<?xml version="1.0" encoding="UTF-8"?>\n<data>\n${rows.join('\n')}\n</data>`;
+      }
+      case 'table': {
+        // Формуємо чисту HTML структуру таблиці з мета-тегом кодування UTF-8 для MS Excel
+        const headers = Object.keys(parsedResult.records[0]);
+        let html = '<html lang="uk"><head><meta charset="UTF-8"></head><body>\n';
+        html += '<table border="1" style="border-collapse: collapse; width: 100%; font-family: sans-serif;">\n  <thead>\n    <tr>\n';
+        headers.forEach(h => html += `      <th style="padding: 8px; border: 1px solid #ddd; background-color: #f3f4f6; text-align: left;">${h}</th>\n`);
+        html += '    </tr>\n  </thead>\n  <tbody>\n';
+        parsedResult.records.forEach(record => {
+          html += '    <tr>\n';
+          headers.forEach(h => html += `      <td style="padding: 8px; border: 1px solid #ddd;">${String(record[h])}</td>\n`);
+          html += '    </tr>\n';
+        });
+        html += '  </tbody>\n</table>\n</body></html>';
+        return html;
+      }
       default:
         return JSON.stringify(parsedResult.records, null, 2);
     }
@@ -242,18 +270,45 @@ export const DemoSection: React.FC = () => {
 
   const handleCopy = async () => {
     const output = formatOutput();
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    toast.success('Скопійовано в буфер обміну');
-    setTimeout(() => setCopied(false), 2000);
+    
+    try {
+      if (outputFormat === 'table') {
+        // Копіюємо як Rich Text (HTML) для коректної вставки безпосередньо у Word або комірки Excel
+        const blob = new Blob([output], { type: 'text/html' });
+        const clipboardItem = new window.ClipboardItem({ 'text/html': blob });
+        await navigator.clipboard.write([clipboardItem]);
+      } else {
+        // Стандартний режим копіювання тексту для форматів JSON, CSV, XML
+        await navigator.clipboard.writeText(output);
+      }
+      
+      setCopied(true);
+      toast.success('Скопійовано в буфер обміну');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      toast.error('Помилка копіювання');
+    }
   };
 
   const handleDownload = () => {
     const output = formatOutput();
-    const extension = outputFormat === 'csv' ? 'csv' : 'json';
-    const mimeType = outputFormat === 'csv' ? 'text/csv' : 'application/json';
     
-    const blob = new Blob([output], { type: mimeType });
+    let extension = 'json';
+    let mimeType = 'application/json';
+
+    if (outputFormat === 'csv') {
+      extension = 'csv';
+      mimeType = 'text/csv';
+    } else if (outputFormat === 'xml') {
+      extension = 'xml';
+      mimeType = 'application/xml';
+    } else if (outputFormat === 'table') {
+      extension = 'xls';
+      mimeType = 'application/vnd.ms-excel';
+    }
+    
+    // Додаємо мітку '\ufeff' (BOM), щоб Excel гарантовано розпізнавав кирилицю в UTF-8
+    const blob = new Blob(['\ufeff' + output], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -263,7 +318,11 @@ export const DemoSection: React.FC = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    toast.success(`Файл parsed-data.${extension} завантажено`);
+    const successMessage = outputFormat === 'table' 
+      ? 'Таблицю успішно експортовано в Excel (.xls)' 
+      : `Файл parsed-data.${extension} завантажено`;
+
+    toast.success(successMessage);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,7 +336,6 @@ export const DemoSection: React.FC = () => {
       setUploadedFileName(file.name);
       setParsedResult(null);
       
-      // Auto-detect format
       if (file.name.endsWith('.json')) {
         setInputFormat('json');
       } else if (file.name.endsWith('.csv')) {
